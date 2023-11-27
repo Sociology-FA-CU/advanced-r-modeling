@@ -1,0 +1,499 @@
+---
+title: "Modeling proportions"
+subtitle: "Binomial and Beta"
+author: "Aleš Vomáčka"
+format:
+  revealjs:
+    theme: [dark, ../custom.scss]
+editor: visual
+messages: false
+warnings: false
+embed-resources: true
+---
+
+# Modeling Bounded Counts
+
+## Bounded counts are pretty common
+
+```{r setup}
+#| echo: false
+library(glmmTMB)
+library(tidyverse)
+library(avom)
+library(ggtext)
+library(marginaleffects)
+library(modelsummary)
+library(gt)
+library(scales)
+library(DHARMa)
+
+eu_attitudes <- read_rds("../data/eu-attitudes.rds")
+
+# Plot setup --------------------------------------------------------------
+theme_set(theme_avom() +
+            theme(text = element_text(size = 30),
+                  plot.title = element_textbox_simple(),
+                  plot.subtitle = element_textbox_simple(),
+                  panel.grid.minor = element_blank(),
+                  panel.grid.major = element_blank(),
+                  panel.background = element_rect(fill = "#FFF0C1"),
+                  plot.background = element_rect(fill = "#FFF0C1"),
+                  axis.ticks = element_blank()))
+
+update_geom_defaults("col", list(fill = "#83a598"))
+update_geom_defaults("area", list(fill = "#83a598"))
+```
+
+::: columns
+::: {.column width="40%"}
+-   Test scores
+
+-   Likert sum scores
+
+-   Number of received votes in elections
+:::
+
+::: {.column width="60%"}
+```{r bounded-count-example}
+#| fig-asp: 1
+#| fig-align: right
+
+eu_attitudes |> 
+  count(eu_knowledge) |> 
+  mutate(prop = n / sum(n)) |> 
+  ggplot(aes(x = eu_knowledge,
+             y = prop)) +
+  geom_col() +
+  labs(x = "Score on EU Knowledge test",
+       y = element_blank()) +
+  scale_y_continuous(labels = percent_format(accuracy = 1))
+```
+:::
+:::
+
+## Binomial regression, our old friend
+
+-   We've already used binomial regression, for modeling categorical data.
+
+-   Every respondent had one "attempt" to succeed.
+
+$$
+logit(Y) \sim Binom(X\beta, 1)
+$$
+
+. . .
+
+-   Now, we will model the number of trials, as well as probability of success.
+
+$$
+logit(Y) \sim Binom(X\beta, k)
+$$
+
+## How well do you EU?
+
+-   We administered a knowledge [test on the EU]{.highlight}. We want to model sum scores based on education, age and attitudes towards the EU.
+
+<br>
+
+**Test questions**
+
+-   *"Members of which of the following institutions are elected by the people directly?"*
+
+-   *"Who is currently the President of the European Commission?"*
+
+-   *"Which two countries are not EU members?"*
+
+-   *"In which of the following areas does Czechia have the least freedom in setting its own policy as a result of its membership in the EU?"*
+
+## Specifying binomial regression
+
+-   Almost identical to "classical" logistic regression, but we need to tell R what the number of trials, i.e. the maximum possible score, is.
+
+-   Every package is different, `glm()` requires to specify number of success and number of failures.
+
+```{r}
+eu_attitudes$fail <- 4 - eu_attitudes$eu_knowledge
+m_scores <- glm(cbind(eu_knowledge, fail) ~ age + edu + eu_index_cat, data = eu_attitudes,
+                family = binomial())
+
+prog_dummy <- tibble(term = c("Edu: Without diploma", "EU index: Pro-EU"),
+                     Poisson = c("-", "-"))
+attr(prog_dummy, "position") <- c(3, 6)
+
+modelsummary(m_scores,
+             output = "gt",
+             fmt = 2,
+             estimate = "{estimate}",
+             statistic = NULL,
+             gof_omit = 'DF|Deviance|R2|AIC|BIC|Obs|Log|RMSE|F',
+             coef_rename = c("eduWith diploma" = "Edu: With diploma",
+                             "eduUniversity" = "Edu: University",
+                             "eu_index_catPro-EU" = "EU index: Pro-EU",
+                             "eu_index_catEurosceptic" = "EU index: Eurosceptic",
+                             "eu_index_catStrongly eurosceptic" = "EU index: Strongly eurosceptic"),
+             add_rows = prog_dummy) |> 
+  cols_label("(1)" = md("**Coefficient**")) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+```
+
+## Marginal effects for binomial model
+
+-   Interpreting as usual through marginal effects.
+
+```{r}
+#| layout-ncol: 2
+#| fig-asp: 1
+
+plot_predictions(m_scores, condition = c("age", "eu_index_cat")) +
+  scale_y_continuous(labels = ~{. * 4}, limits = c(0, 1)) +
+  theme(legend.position = "bottom") +
+  labs(x = "Age",
+       y = "Average score",
+       color = element_blank(),
+       fill = element_blank()) +
+  scale_fill_avom() +
+  scale_color_avom() +
+  theme(text = element_text(size = 30)) +
+  guides(fill = guide_legend(label.position = "bottom"),
+         color = guide_legend(label.position = "bottom"))
+
+
+plot_predictions(m_scores, condition = "edu") +
+  scale_y_continuous(labels = ~{. * 4}, limits = c(0, 1)) +
+  theme(legend.position = "bottom") +
+  labs(x = "Age",
+       y = "Average score",
+       color = element_blank(),
+       fill = element_blank()) +
+  scale_fill_avom() +
+  scale_color_avom() +
+  theme(text = element_text(size = 30))
+```
+
+## Assumptions
+
+-   Validity and reliability
+
+-   Representativity
+
+-   Linearity between logit of dependent variable and predictors
+
+-   The [probability of answering correctly is the same]{.highlight} for each variable, e.g. difficulty is the same.
+
+    -   If violated, difficulty can be modeled directly using [beta-binomial regression]{.highlight}.
+
+## Single likert items
+
+-   We can treat a single likert item as a "score".
+
+-   E.g. Attitudes towards EU
+
+    -   0 Strongly eurosceptic
+
+    -   1 Eurosceptic
+
+    -   2 Pro-EU
+
+    -   3 Strongly pro-EU
+
+-   Unlike linear regression, this approach naturaly accounts for item's bound.
+
+## EU attitudes an binomial regression
+
+```{r}
+m_single <- eu_attitudes |> 
+  mutate(eu_score = case_when(eu_index_cat == "Strongly eurosceptic" ~ 0,
+                              eu_index_cat == "Eurosceptic" ~ 1,
+                              eu_index_cat == "Pro-EU" ~ 2,
+                              eu_index_cat == "Strongly pro-EU" ~ 3),
+         fail = 3 - eu_score) |> 
+  glm(cbind(eu_score, fail) ~ age + edu * eu_knowledge, data = _, family = binomial())
+
+plot_predictions(m_single, condition = c("age", "eu_knowledge" ,"edu")) +
+  scale_y_continuous(labels = ~{. * 3 + 1},
+                     limits = c(0, 1)) +
+  theme(legend.position = "bottom") +
+  labs(x = "Age",
+       y = "EU attitudes (Higher is more positive)",
+       color = "EU knowledge score",
+       fill = "EU knowledge score") +
+  scale_fill_avom() +
+  scale_color_avom() +
+  theme(text = element_text(size = 15))
+
+```
+
+# Questions?
+
+# InteRmezzo!
+
+# Proportions
+
+## Good old proportions
+
+::: columns
+::: {.column width="40%"}
+-   Votes in a district
+
+-   Proportion of returning customers
+
+-   Proportion of day spend commuting
+
+-   Likert mean scores (kinda)
+:::
+
+::: {.column width="60%"}
+```{r}
+#| fig-asp: 1
+#| fig-align: right
+
+eu_attitudes |> 
+  ggplot(aes(x = eu_index)) +
+  geom_histogram(bins = 25) +
+  labs(x = "EU Attitudes Index",
+       y = element_blank())
+```
+:::
+:::
+
+## Beta distribution
+
+::: columns
+::: {.column width="50%"}
+-   Used for proportions and bounded continuous data
+
+-   In (0:1), non-inclusive!
+
+-   Two parameters, $\alpha$ and $\beta$
+
+-   mean = $\frac{\alpha}{\alpha + \beta} = \frac{sucess}{sucess + failure}$
+
+-   variance = $\frac{\alpha\cdot\beta}{(\alpha + \beta)^2 \cdot (\alpha + \beta + 1)}$
+:::
+
+::: {.column width="50%"}
+```{r}
+#| fig-asp: 1
+#| fig-align: right
+
+tibble(x = seq(0.01,0.99,0.01),
+       y1 = dbeta(x, 5, 5),
+       y2 = dbeta(x, 4, 6),
+       y3 = dbeta(x, 0.2, 0.2)) |> 
+  pivot_longer(cols = -x) |> 
+  mutate(name = case_when(name == "y1" ~ "5;5",
+                          name == "y2" ~ "4;6",
+                          name == "y3" ~ "0.2;0.2")) |> 
+  ggplot(aes(x = x,
+             y = value,
+             fill = name)) +
+  facet_wrap(~name, ncol = 1) +
+  geom_area() +
+  labs(x = "Proportion",
+       y = element_blank()) +
+  theme(legend.position = "none",
+        axis.text.y = element_blank())
+```
+:::
+:::
+
+## Modeling mean scores
+
+-   Beta distribution assumes values between 0-1, we need to rescale the data.
+
+$$
+logit(Y) \sim Beta(X\beta)
+$$
+
+-   Logit link! Non-collapsibility, we meet again...
+
+-   Doesn't work if there are 0s or 1s in our data. Solution?
+
+## Ordered beta
+
+-   Multiple ways to incorporate 0s and 1s into our model.
+
+-   A neat one is ordered beta (other option is zero-one-inflated beta)
+
+-   (Roughly speaking) We predict whether an observation is 0 or 1 using logistic regression. If not, predict the proportion using beta.
+
+$$
+\begin{align}
+logit(Y = 0) &\sim Binomial(X\beta) \\
+logit(1> Y > 0) &\sim Beta(X\beta) \\
+logit(Y = 1) &\sim Binomial(X\beta) \\
+\end{align}
+$$
+
+## Modeling EU index
+
+-   Are EU attitudes associated with knowing how the EU works, after controlling for age and education?
+
+$$
+\begin{align}
+logit(EU\;score) \sim OrdBeta(&Age + Knowledge + \\
+&Education + Knowledge \cdot Education)
+\end{align}
+$$
+
+-   Interpreted as usual trough marginal effects and predicted values plots.
+
+## Modeling EU index
+
+```{r}
+m_ordbeta <- eu_attitudes |> 
+  mutate(eu_index = 5 - eu_index,
+         eu_index = (eu_index - 1) / 3) |> 
+  glmmTMB(eu_index ~ age + edu * eu_knowledge, data = _, family = ordbeta())
+
+plot_predictions(m_ordbeta, condition = c("eu_knowledge", "edu")) +
+  scale_y_continuous(labels = ~{. * 3 + 1},
+                     limits = c(0, 1)) +
+  theme(legend.position = "bottom") +
+  labs(x = "EU knowledge",
+       y = "EU attitudes (Higher is more positive)",
+       color = element_blank(),
+       fill = element_blank()) +
+  scale_fill_avom() +
+  scale_color_avom() +
+  theme(text = element_text(size = 15))
+```
+
+## Assumptions
+
+-   Validity and reliability
+
+-   Representative
+
+-   Linearity
+
+-   Conditional distribution is beta
+
+# Questions?
+
+# InteRmezzo!
+
+# Wrapping up GLMs
+
+## GLMs wrap up
+
+-   By remembering few distribution, you can make modeling much easier.
+
+-   Proper Generalized linear model respects properties of data and serves as a base for more complicate models.
+
+    -   Item response theory
+
+    -   Conjoint analysis
+
+    -   Propensity score matching
+
+    -   and more...
+
+-   Don't rely on regression coefficients, use marginal effects and predicted probabilities plot.
+
+-   Model fit can be checked using randomized residuals and posterior predictive plots.
+
+## GLMs in a table
+
+```{r}
+tribble(~type, ~distribution, ~example, ~package,
+        "Binary",         "Binomial",      "Voter turnout",    "base::glm()",
+        "Ordinal",        "Binomial",      "Subjective health","ordinal::clm()",
+        "Multinominal",   "Binomial",      "Party preference", "nnet::multinom()",
+        "Counts",         "Neg. Binomial", "No. of absences",  "glmmTMB::glmmTMB()",
+        "Bounded counts", "(beta)Binomial","Test scores",      "base::glm(), glmmTMB::glmmTMB()",
+        "Proportions",    "(ordered)Beta" ,"Vote shares",      "glmmTMB::glmmTMB()") |> 
+  gt() |> 
+  cols_label("type" = md("**Variable Type**"),
+             "distribution" = md("**Distribution**"),
+             "example" = md("**Example**"),
+             "package" = md("**R package**")) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1",
+              table.font.size = "30px") |> 
+  opt_row_striping(row_striping = TRUE) |> 
+  opt_vertical_padding(scale = 2)
+```
+
+## GLMs and the R ecosystem
+
+-   Modelling functions are spread across number of packages.
+
+    -   Takes time to find the right package
+
+    -   Compatibility problems
+
+    -   Different syntax
+
+-   Solution?
+
+## The Beauty of the BRMS package
+
+::: columns
+::: {.column width="60%"}
+-   Few general packages (glmmTMB, VGAM).
+
+-   By far the best (IMHO) is `brms`.
+
+-   Bayesian Regression ModelS
+
+-   (can be used for frequentist estimates)
+
+-   Everything in one place
+
+    -   All the distributions (and more)
+
+    -   Diagnostic plots
+
+    -   Perfectly compatible with `marginaleffects`
+
+-   So why not teach it?
+:::
+
+::: {.column width="40%"}
+![](images/brms-01.png){fig-align="right"}
+:::
+:::
+
+## BRMS trade-offs
+
+-   `brms` uses simulations to estimate models (Stan language).
+
+-   Advantage:
+
+    -   Extremely flexible
+
+    -   Easy to work with/postprocesses
+
+    -   More robust
+
+-   Disadvantage:
+
+    -   It takes *much* longer to estimate models
+
+    -   Need to make sure the simulation went ok
+
+## BRMS trade-offs
+
+-   When Maximum likelihood based model takes 0.5 seconds to estimate, `brms` takes 1-5 minutes.
+
+-   When ML based model takes 3 minutes to estimate, `brms` takes 30-60 minutes.
+
+-   Is it worth it?
+
+## Time management, modeling style
+
+-   From my experience, yes.
+
+-   Waiting 5 minutes for a model \> Spending 1 hour looking for packages and fixing compatibility issues.
+
+-   Waiting 1 hour for a model \> Spending 4 hours making sure a model converges.
+
+-   Sometimes, you straight up don't have a choice
+
+-   So give `brms` a try!
+
+# Questions?
+
+# Next time: Causal inference

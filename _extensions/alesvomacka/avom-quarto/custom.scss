@@ -1,0 +1,97 @@
+/*-- scss:defaults --*/
+
+// Import fonts
+@import url('https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,300;0,600;1,300;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:ital,wght@0,300;0,600;1,300;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Mono&display=swap');
+
+// Fonts
+$font-family-sans-serif: 'Fira Sans Condensed', sans-serif !default;
+$font-family-serif: "Fira Sans", serif !default;
+$font-family-monospace: "Fira Mono", monospace !default;
+
+// Colors
+$body-bg: #f9f5d7; // slide backround color
+$body-color: #3c3836 !default; // text color
+$link-color: #d65d0e !default; // hypertext color
+$highlight-color: #af3a03 !default;
+$code-bg: #f2e5bc !default;
+
+$presentation-heading-color: $body-color; // heading color
+
+// Text sizes
+$presentation-font-size-root: 35px; // base text size
+$h1-font-size: 1.6em !default; // default H1 font size
+$h2-font-size: 1.3em !default; // default H2 font size
+$h3-font-size: 1.15em !default; // default H3 font size
+
+/*-- scss:rules --*/
+
+.reveal pre code {
+  background-color: $code-bg; // Codeblock backround color
+  font-size: 1em;
+  padding: 0.5em;
+  line-height: 1.2em;
+}
+
+// Title Slide Styling
+#title-slide {
+  text-align: left;
+  color: $presentation-heading-color;
+  
+  .title {
+    font-weight: 600;
+  }
+  
+  .quarto-title-authors {
+    display: flex;
+    justify-content: left;
+
+    .quarto-title-author {
+      padding-left: 0em;
+      padding-right: 0em;
+      width: 100%;
+    }
+  }
+  
+ .date {
+   font-size: 24.5px;
+   margin-bottom: 8px;
+   margin-top: 0px;
+ }
+  
+}
+
+//Separation line between author and title/subtitle
+p.author::before, div.quarto-title-author::before {
+    content: "";
+    display: block;
+    border: none;
+    background-color: $body-color;
+    color: $body-color;
+    height: 3px;
+    margin-bottom: 1em;
+  }
+  
+/*-- scss:custom classes --*/
+.highlight {
+    color: $highlight-color;
+    font-weight: bold;
+}
+  
+  
+.endslide-thanks {
+  font-size: 2em;
+  font-weight: bold;
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.endslide-links {
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}

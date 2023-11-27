@@ -1,0 +1,834 @@
+---
+title: "Mixed models"
+subtitle: "aka Random effects models aka hierarchical models aka multilevel models"
+author: "Aleš Vomáčka"
+format:
+  revealjs:
+    theme: [dark, ../custom.scss]
+editor: visual
+messages: false
+warnings: false
+embed-resources: true
+---
+
+## The Plan
+
+```{r setup}
+#| echo: false
+library(tidyverse)
+library(avom)
+library(ggtext)
+library(marginaleffects)
+library(gt)
+library(scales)
+library(lme4)
+
+gpa <- read_csv("https://raw.githubusercontent.com/m-clark/mixed-models-with-R/master/data/gpa.csv")
+gpa$student <- as.factor(gpa$student)
+
+regions <- read_csv("../data/ua_violence.csv")
+pupils <- read_rds("../data/pupils.rds")
+eu_attitudes <- read_rds("../data/eu-attitudes.rds")
+
+# Plot setup --------------------------------------------------------------
+theme_set(theme_avom() +
+            theme(text = element_text(size = 20),
+                  plot.title = element_textbox_simple(),
+                  plot.subtitle = element_textbox_simple(),
+                  panel.grid.minor = element_blank(),
+                  panel.grid.major = element_blank(),
+                  panel.background = element_rect(fill = "#FFF0C1"),
+                  plot.background = element_rect(fill = "#FFF0C1"),
+                  axis.ticks = element_blank()))
+
+update_geom_defaults("col", list(fill = "#83a598"))
+update_geom_defaults("area", list(fill = "#83a598"))
+
+```
+
+-   Mixed models technically.
+
+-   Application
+
+-   Technical comments
+
+# No, Complete & Partial Pooling
+
+## GPA Over Time and Gender
+
+-   We are interested [how academic skills develop over time]{.highlight}, based on gender.
+
+-   Data from university students measured across 6 semesters.
+
+-   Academic skills measured as [GPA]{.highlight} (Graded Point Average).
+
+{{< newline >}}
+
+-   Multiple ways to do it.
+
+## Option 1: Complete Pooling
+
+-   We can pool all information from all students together and estimate a single effect:
+
+$$
+gpa \sim N(\beta_0 + \beta_1 \cdot occasion, \epsilon)
+$$
+
+-   In R code:
+
+```{r gpa-complete}
+#| echo: true
+gpa_complete <- lm(gpa ~ occasion, data = gpa)
+```
+
+## Option 1: Complete Pooling
+
+-   Single regression line for everyone
+
+```{r}
+student_ids <- as.factor(c(20, 48, 51, 95, 97, 146))
+gpa_newdata <- expand_grid(student = student_ids,
+                           occasion = 1:6)
+
+gpa_newdata <- gpa |> select(student, occasion, gpa) |>
+  right_join(gpa_newdata, by = c("student", "occasion"))
+
+plot_predictions(model = gpa_complete,
+                 newdata = gpa_newdata,
+                 draw = FALSE, by = c("student", "occasion")) |> 
+  ggplot(aes(x = occasion,
+             y = estimate,
+             ymin = conf.low,
+             ymax = conf.high)) +
+  geom_ribbon(mapping = aes(group = 1), fill = "#fb4934", alpha = 0.3) +
+  geom_line(mapping = aes(group = 1), color = "#fb4934") +
+  geom_point(mapping = aes(y = gpa)) +
+  facet_wrap(~student) +
+  labs(x = "Occasion",
+       y = "GPA")
+```
+
+## Option 1: Complete Pooling
+
+-   [Complete pooling]{.highlight} assumes "clusters" (students) are interchangeble.
+
+    -   Trend is the same for all students
+
+    -   Observations within students are no more correlated than across students.
+
+{{< newline >}}
+
+-   Advantage - Efficient, both statistically and computationally
+
+-   Disadvantages - Ignores effect heterogeneity, overly optimistic standard errors
+
+## Option 2: No Pooling
+
+-   We can estimate the effect for each student separately:
+
+$$
+gpa \sim N(\beta_0 + \beta_1 \cdot occasion + \beta_2 \cdot student + \beta_3 \cdot (occasion \cdot student), \epsilon)
+$$
+
+-   In R code:
+
+```{r}
+#| echo: true
+
+gpa_no <- lm(gpa ~ occasion * student, data = gpa)
+```
+
+## Option 2: No Pooling
+
+-   Individual regression line for every student
+
+```{r}
+plot_predictions(model = gpa_no,
+                 newdata = gpa_newdata,
+                 draw = FALSE, by = c("student", "occasion")) |> 
+  ggplot(aes(x = occasion,
+             y = estimate,
+             ymin = conf.low,
+             ymax = conf.high)) +
+  geom_ribbon(mapping = aes(group = 1), fill = "#b8bb26", alpha = 0.3) +
+  geom_line(mapping = aes(group = 1), color = "#b8bb26") +
+  geom_point(mapping = aes(y = gpa)) +
+  facet_wrap(~student) +
+  labs(x = "Occasion",
+       y = "GPA")
+```
+
+## Option 2: No Pooling
+
+-   [No pooling]{.highlight} assumes every "cluster" (student) is unique
+
+    -   Every student has unique trend.
+
+    -   Students are unique - information about one says nothing about the rest.
+
+{{< newline >}}
+
+-   Advantage - Allows for effect heterogeneity, accounts for dependent observations.
+
+-   Disadvantage - Extremely inefficient (large standard errors), No generalization to new students.
+
+## Option 3: Partial Pooling
+
+-   Assuming all students are interchangeable is unrealistic (complete pooling).
+
+-   Assuming all students are completely unique is impractical (no pooling).
+
+{{< newline >}}
+
+-   What is one to do?
+
+{{< newline >}}
+
+. . .
+
+-   Assume that students are [distinct, but similar]{.highlight} (partial pooling)!
+
+## Option 3: Partial Pooling
+
+-   We can assume all [students come from the same population]{.highlight}.
+
+{{< newline >}}
+
+-   By convention, we (usually) assume the population is normally distributed.
+
+{{< newline >}}
+
+-   That is, the regression lines for most students will be similar to each other, with a small number of outliers (both positive and negative).
+
+## Option 3: Partial Pooling - Random Intercepts {.smaller}
+
+-   We can assume students have different starting points, but the same progression.
+
+-   We call this [Random Intercept model]{.highlight}.
+
+```{r}
+gpa_partial_intercepts <- lmer(gpa ~ occasion + (1|student), data = gpa)
+
+plot_predictions(model = gpa_partial_intercepts,
+                 newdata = gpa_newdata,
+                 draw = FALSE, by = c("student", "occasion")) |> 
+  ggplot(aes(x = occasion,
+             y = estimate,
+             ymin = conf.low,
+             ymax = conf.high)) +
+  geom_ribbon(mapping = aes(group = 1), fill = "#83a598", alpha = 0.3) +
+  geom_line(mapping = aes(group = 1), color = "#83a598") +
+  geom_point(mapping = aes(y = gpa)) +
+  facet_wrap(~student) +
+  labs(x = "Occasion",
+       y = "GPA")
+```
+
+## Option 3: Partial Pooling - Random Slopes {.smaller}
+
+-   We can assume both starting points and progression is individual.
+
+-   We call this [Random Slopes model]{.highlight}.
+
+```{r}
+gpa_partial_slopes <- lmer(gpa ~ occasion + (1 + occasion|student), data = gpa)
+
+plot_predictions(model = gpa_partial_slopes,
+                 newdata = gpa_newdata,
+                 draw = FALSE, by = c("student", "occasion")) |> 
+  ggplot(aes(x = occasion,
+             y = estimate,
+             ymin = conf.low,
+             ymax = conf.high)) +
+  geom_ribbon(mapping = aes(group = 1), fill = "#83a598", alpha = 0.3) +
+  geom_line(mapping = aes(group = 1), color = "#83a598") +
+  geom_point(mapping = aes(y = gpa)) +
+  facet_wrap(~student) +
+  labs(x = "Occasion",
+       y = "GPA")
+```
+
+## Option 3: Partial Pooling
+
+-   [Partial pooling]{.highlight} assumes "clusters" (students) are distinct, but similar.
+
+    -   General trend + individual effects
+
+    -   Final prediction for each student uses both the information we have about them specifically and information we have about all others.
+
+{{< newline >}}
+
+-   Advantage:
+
+    -   Allows for effect heterogeneity, accounts for dependent observations, statistically efficient.
+
+-   Disadvantage:
+
+    -   Computationally demanding, harder to set up.
+
+## Complete/No/Partial Pooling Comparison
+
+```{r}
+predicted_complete <- plot_predictions(model = gpa_complete,
+                 newdata = gpa_newdata,
+                 draw = FALSE, by = c("student", "occasion")) |> 
+  mutate(Pooling = "Complete")
+
+predicted_no <- plot_predictions(model = gpa_no,
+                 newdata = gpa_newdata,
+                 draw = FALSE, by = c("student", "occasion")) |> 
+  mutate(Pooling = "No")
+
+predicted_partial <- plot_predictions(model = gpa_partial_slopes,
+                 newdata = gpa_newdata,
+                 draw = FALSE, by = c("student", "occasion")) |> 
+  mutate(Pooling = "Partial (Random Slopes)")
+
+
+bind_rows(predicted_complete, predicted_no, predicted_partial) |> 
+  mutate(Pooling = fct_relevel(Pooling, "Complete", "No")) |> 
+  ggplot(aes(x = occasion,
+             y = estimate,
+             ymin = conf.low,
+             ymax = conf.high,
+             color = Pooling,
+             fill = Pooling,
+             group = Pooling)) +
+#  geom_ribbon( alpha = 0.15, color = NA) +
+  geom_line() +
+  geom_point(mapping = aes(y = gpa), color = "grey30", show.legend = FALSE) +
+  facet_wrap(~student) +
+  labs(x = "Occasion",
+       y = "GPA") +
+  theme(legend.position = "bottom") +
+  scale_color_avom() +
+  scale_fill_avom()
+```
+
+## Comparing Regression Coefficients/AMEs
+
+```{r}
+slopes_complete <- avg_slopes(model = gpa_complete,
+                 newdata = tibble(student = student_ids,
+                            occasion = 1),
+                 by = c("student", "occasion")) |> 
+  mutate(Pooling = "Complete")
+
+slopes_no <- avg_slopes(model = gpa_no,
+           variables = c("occasion"),
+           by = "student",
+           newdata = tibble(student = student_ids,
+                            occasion = 1)) |> 
+  mutate(Pooling = "No")
+
+slopes_partial <- avg_slopes(model = gpa_partial_slopes,
+                 newdata = tibble(student = student_ids,
+                            occasion = 1),
+                 by = c("student", "occasion")) |> 
+  mutate(Pooling = "Partial (Random Slopes)")
+
+
+bind_rows(slopes_complete, slopes_no, slopes_partial) |> 
+  mutate(Pooling = fct_relevel(Pooling, "Complete", "No"),
+         student = fct_reorder(student, estimate)) |> 
+  ggplot(aes(y = student,
+             x = estimate,
+             xmin = conf.low,
+             xmax = conf.high,
+             color = Pooling,
+             fill = Pooling,
+             group = Pooling)) +
+  geom_pointrange(position = position_dodge(width = 0.2)) +
+  labs(x = "Regression coefficients",
+       y = "Student ID") +
+  theme(legend.position = "bottom") +
+  scale_color_avom() +
+  scale_fill_avom()
+```
+
+# Questions?
+
+## A Bit of Math
+
+-   Classical linear regression (complete pooling) looks like this:
+
+$$
+gpa \sim N(\beta_0 + \beta_1 \cdot occasion + \beta_2 \cdot student + \beta_3 \cdot (occasion \cdot student), \epsilon)
+$$
+
+-   Partial pooling models look like this:
+
+$$
+\begin{align}
+gpa & \sim N(\beta_1 \cdot occasion + \beta_{2j} \cdot student, \epsilon) \\
+\beta_{2j} & \sim N(\gamma_0 + \gamma_1 \cdot student, \delta)
+\end{align}
+$$
+
+## A Bit of Math
+
+$$
+\begin{align}
+gpa & \sim N(\beta_1 \cdot occasion + \beta_{2j} \cdot student, \epsilon) \\
+\beta_{2j} & \sim N(\gamma_0 + \gamma_1 \cdot student, \delta)
+\end{align}
+$$
+
+-   The model has multiple levels, hence [multilevel models]{.highlight}
+
+-   $\beta_2j$ is random variable, not a fixed coefficient, hence [random effect models]{.highlight}.
+
+-   Models that have both fixed and random coefficients are [mixed effects models]{.highlight}.
+
+. . .
+
+{{< newline >}}
+
+-   The nomenclature is... difficult.
+
+-   There actually 8-10 different names for this kind of models.
+
+-   Fixed/random effects can also mean different things.
+
+## A Bit of Math
+
+-   The predicted gpa for a "cluster" (e.g. student) is
+
+$$
+gpa_j^{multilevel} \approx \frac{\color{blue}{\frac{n_j}{\sigma^2_y} \overline{gpa_j} }+ \color{red}{ \frac{1}{\sigma^2_\alpha} \overline{gpa_{all}}}}{\color{blue}{\frac{n_j}{\sigma^2_y}} + \color{red} {\frac{1}{\sigma^2_\alpha}}}
+$$
+
+-   Final prediction for a student is a weighted average of [the information we know about the student]{style="color:blue;"} and [the information we know about everyone else]{style="color:red;"}.
+
+## A Bit of Math
+
+$$
+gpa_j^{multilevel} \approx \frac{\color{blue}{\frac{n_j}{\sigma^2_y} \overline{gpa_j} }+ \color{red}{ \frac{1}{\sigma^2_\alpha} \overline{gpa_{all}}}}{\color{blue}{\frac{n_j}{\sigma^2_y}} + \color{red} {\frac{1}{\sigma^2_\alpha}}}
+$$
+
+-   The more observation we have from the student and the smaller their variance, the closer to no pooling approach.
+
+-   The less observations we have from the student and the bigger the variance *across all students*, the closer to complete pooling approach.
+
+## A Bit of Math
+
+$$
+gpa_j^{multilevel} \approx \frac{\color{blue}{\frac{n_j}{\sigma^2_y} \overline{gpa_j} }+ \color{red}{ \frac{1}{\sigma^2_\alpha} \overline{gpa_{all}}}}{\color{blue}{\frac{n_j}{\sigma^2_y}} + \color{red} {\frac{1}{\sigma^2_\alpha}}}
+$$
+
+-   (Roughly speaking) Mixed models [dynamically balance estimate pooling]{.highlight}.
+
+    -   Clusters we have a lot of information about don't need pooling and the results will reflect that.
+
+    -   Cluster we have little information about need more "support", so we add info from the rest of the data.
+
+# Questions?
+
+# Applications
+
+## Mixed Models in Practice
+
+-   Accounting for dependent observations
+
+-   Regularization
+
+-   Individual vs Group effects
+
+## Accounting for dependent observations
+
+-   By far the most common use in social sciences.
+
+-   Common regression assumes observations are independent of each other.
+
+-   With multilevel models, observations inside groups are assumed to be dependent on each other.
+
+# InteRmezzo!
+
+## GPA Model Recap
+
+-   We can give each student own intercept and/or slope
+
+-   We can look at [average trend]{.highlight} or [individual random effects]{.highlight}.
+
+-   When interpreting, we need to choose between:
+
+    -   Average effect across student (`re.form = NULL`)
+
+    -   Effect for average student (`re.form = NA`}
+
+-   Other model interpretation and diagnostic works the same as usual.
+
+-   Predictive importance of random components can be assessed by ICC.
+
+## Intraclass Correlation Coefficient (ICC)
+
+-   How much variance in the outcome can be predicted by the random components.
+
+    -   0 = no difference between clusters (e.g. students).
+
+    -   1 = all variance is due to cluster differences.
+
+-   ICC is [correlation between values from the same cluster]{.highlight} (usually).
+
+-   In random slopes model, ICC depends on the value of the random variable.
+
+## Accounting for dependent observations
+
+-   Most common application.
+
+-   Bit of an overkill - easier way to that like fixed effects (fixest package)
+
+-   Multilevel models can do more.
+
+# Questions?
+
+# Regularization
+
+## Sexual Violence by Region
+
+-   (All data here are simulated!)
+
+-   We are interested in the [prevalence of sexual harassment]{.highlight} in the population [by region]{.highlight}.
+
+-   We have data from survey asking people whether they have experienced sexual harassment in last 6 month.
+
+-   Problem: The survey only included [1 000 respondents]{.highlight}.
+
+```{r}
+n = 1e3
+set.seed(3214)
+region_sample <- tibble(region = sample(regions$region, size = n, replace = TRUE, prob = regions$pop),
+                        violence = case_when(region == "Hlavní město Praha" ~ rbinom(n = n, size = 1, prob = 0.106),
+                                          region == "Středočeský kraj" ~ rbinom(n = n, size = 1, prob = 0.0861),
+                                          region == "Jihočeský kraj" ~ rbinom(n = n, size = 1, prob = 0.0683),
+                                          region == "Plzeňský kraj" ~ rbinom(n = n, size = 1, prob = 0.110),
+                                          region == "Karlovarský kraj" ~ rbinom(n = n, size = 1, prob = 0.0658),
+                                          region == "Ústecký kraj" ~ rbinom(n = n, size = 1, prob = 0.0854),
+                                          region == "Liberecký kraj" ~ rbinom(n = n, size = 1, prob = 0.105),
+                                          region == "Královéhradecký kraj" ~ rbinom(n = n, size = 1, prob = 0.0628),
+                                          region == "Pardubický kraj" ~ rbinom(n = n, size = 1, prob = 0.0851),
+                                          region == "Kraj Vysočina" ~ rbinom(n = n, size = 1, prob = 0.0862),
+                                          region == "Jihomoravský kraj" ~ rbinom(n = n, size = 1, prob = 0.0664),
+                                          region == "Olomoucký kraj" ~ rbinom(n = n, size = 1, prob = 0.0751),
+                                          region == "Zlínský kraj" ~ rbinom(n = n, size = 1, prob = 0.111),
+                                          region == "Moravskoslezský kraj" ~ rbinom(n = n, size = 1, prob = 0.0962)))
+
+violence_no <- glm(violence ~ region, data = region_sample, family = binomial(link = "logit"))
+violance_partial <- glmer(violence ~ (1|region),
+                          data = region_sample,
+                          family = binomial(link = "logit"))
+```
+
+## Sexual Violence by Region - Simple Estimates
+
+```{r}
+regions_n <- region_sample |> 
+  count(region)
+
+plot_predictions(violence_no, condition = "region", draw = FALSE) |> 
+  left_join(regions_n, by = "region") |> 
+  mutate(region = str_replace(region, "[K|k]raj", ""),
+         region = str_replace(region, "Hlavní město", ""),
+         region = str_squish(region),
+         region = paste0(region, " (n=", n, ")"),
+         region = fct_reorder(region, n)) |> 
+  ggplot(aes(x = estimate,
+             xmin = conf.low,
+             xmax = conf.high,
+             y = region)) +
+  geom_pointrange() + 
+  scale_x_continuous(limits = c(0, 0.4), labels = percent_format(accuracy = 1)) +
+  labs(x = "% experienced sexual harrasment",
+       y = element_blank())
+```
+
+## Sexual Violence by Region - Pooled Estimates
+
+```{r}
+violence_pred_no <- plot_predictions(violence_no, condition = "region", draw = FALSE) |> 
+  left_join(regions_n, by = "region") |> 
+  mutate(region = str_replace(region, "[K|k]raj", ""),
+         region = str_replace(region, "Hlavní město", ""),
+         region = str_squish(region),
+         region = paste0(region, " (n=", n, ")"),
+         region = fct_reorder(region, n),
+         Pooling = "No")
+
+violence_pred_partial <- plot_predictions(violance_partial, condition = "region", draw = FALSE) |>
+  left_join(regions_n, by = "region") |> 
+  mutate(region = str_replace(region, "[K|k]raj", ""),
+         region = str_replace(region, "Hlavní město", ""),
+         region = str_squish(region),
+         region = paste0(region, " (n=", n, ")"),
+         region = fct_reorder(region, n),
+         Pooling = "Partial")
+
+bind_rows(violence_pred_no, violence_pred_partial) |> 
+   ggplot(aes(x = estimate,
+             xmin = conf.low,
+             xmax = conf.high,
+             y = region,
+             color = Pooling)) +
+  geom_pointrange(position = position_dodge(0.2)) + 
+  scale_x_continuous(limits = c(0, 0.4), labels = percent_format(accuracy = 1)) +
+  labs(x = "% experienced sexual harrasment",
+       y = element_blank()) +
+  scale_color_avom() +
+  theme(legend.position = "bottom")
+```
+
+## Regularization
+
+-   Two sources of error:
+
+    -   Bias - systematic errors
+
+    -   Variance - random errors
+
+-   Traditional (applied) statistics placed large focus on reducing bias.
+
+-   Today, bias and variance can be exchanged ([Bias-Variance trade off]{.highlight})
+
+## Regularization
+
+-   Regularization - technique that increases bias, but lowers variance.
+
+    -   LASSO, Ridge regression
+
+    -   Bayesian priors
+
+    -   Partial pooling
+
+-   Hopefully, the decrease in variance is much higher than the increase of bias.
+
+## Non-regularized Predictions
+
+```{r}
+sim_models <- vector("list", 100)
+
+for (i in 1:100) {
+  region_sample <- tibble(region = sample(regions$region, size = n, replace = TRUE, prob = regions$pop),
+                          violence = case_when(region == "Hlavní město Praha" ~ rbinom(n = n, size = 1, prob = 0.106),
+                                            region == "Středočeský kraj" ~ rbinom(n = n, size = 1, prob = 0.0861),
+                                            region == "Jihočeský kraj" ~ rbinom(n = n, size = 1, prob = 0.0683),
+                                            region == "Plzeňský kraj" ~ rbinom(n = n, size = 1, prob = 0.110),
+                                            region == "Karlovarský kraj" ~ rbinom(n = n, size = 1, prob = 0.0658),
+                                            region == "Ústecký kraj" ~ rbinom(n = n, size = 1, prob = 0.0854),
+                                            region == "Liberecký kraj" ~ rbinom(n = n, size = 1, prob = 0.105),
+                                            region == "Královéhradecký kraj" ~ rbinom(n = n, size = 1, prob = 0.0628),
+                                            region == "Pardubický kraj" ~ rbinom(n = n, size = 1, prob = 0.0851),
+                                            region == "Kraj Vysočina" ~ rbinom(n = n, size = 1, prob = 0.0862),
+                                            region == "Jihomoravský kraj" ~ rbinom(n = n, size = 1, prob = 0.0664),
+                                            region == "Olomoucký kraj" ~ rbinom(n = n, size = 1, prob = 0.0751),
+                                            region == "Zlínský kraj" ~ rbinom(n = n, size = 1, prob = 0.111),
+                                            region == "Moravskoslezský kraj" ~ rbinom(n = n, size = 1, prob = 0.0962)))
+  
+  violence_no <- glm(violence ~ region, data = region_sample, family = binomial(link = "logit"))
+  
+  violance_partial <- glmer(violence ~ (1|region),
+                            data = region_sample,
+                            family = binomial(link = "logit"),
+                            control = glmerControl(optimizer = "bobyqa"))
+  
+  d <- bind_rows(avg_predictions(violence_no, newdata = tibble(region = "Karlovarský kraj")) |>
+                               mutate(Pooling = "No", draw = i),
+                             avg_predictions(violance_partial, newdata = tibble(region = "Karlovarský kraj")) |>
+                               mutate(Pooling = "Partial", draw = i))
+  sim_models[[i]] <- d
+  
+}
+
+sim_models |> 
+  bind_rows() |> 
+  mutate(conf.high = if_else(conf.high > 0.5, 0.5, conf.high)) |> 
+  filter(Pooling == "No") |>
+  ggplot(aes(x = draw,
+             y = estimate,
+             ymin = conf.low,
+             ymax = conf.high)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0.0658, color = "#fb4934") +
+  scale_y_continuous(limits = c(0, 0.5), labels = percent_format(accuracy = 1)) +
+  labs(x = "Sample", y = "Sexual harrasment\nin Karlovarský")
+```
+
+## Regularized Predictions (Partial Pooling)
+
+```{r}
+sim_models |> 
+  bind_rows() |> 
+  mutate(conf.high = if_else(conf.high > 0.5, 0.5, conf.high)) |> 
+  filter(Pooling == "Partial") |>
+  ggplot(aes(x = draw,
+             y = estimate,
+             ymin = conf.low,
+             ymax = conf.high)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0.0658, color = "#fb4934") +
+  scale_y_continuous(limits = c(0, 0.5), labels = percent_format(accuracy = 1)) +
+  labs(x = "Sample", y = "Sexual harrasment\nin Karlovarský")
+```
+
+## Regularization
+
+-   Simple estimates have no bias, but high variance.
+
+-   Regularized estimates have high bias, but low variance
+
+{{< newline >}}
+
+-   Bias can be reduced by [including cluster (region) level predictors]{.highlight}:
+
+    -   Unemployment rate
+
+    -   education level
+
+-   (And of course by increasing sample size)
+
+## Regularization to Prevent False Positives
+
+-   Partial pooling can be used to [lower false positive rate]{.highlight}.
+
+-   By partialy pooling data, we are squishing unusually large estimates towards the grand mean, unless we have a lot of data supporting the large estimate.
+
+{{< newline >}}
+
+-   Gelman, A., Hill, J., & Yajima, M. (2012). Why We (Usually) Don't Have to Worry About Multiple Comparisons. *Journal of Research on Educational Effectiveness*, *5*(2), 189--211. <https://doi.org/10.1080/19345747.2011.618213>
+
+# Question?
+
+# InteRmezzo!
+
+# Individual vs Group Effects
+
+## Individual vs Group Effects
+
+-   We know that students with higher SES perform better at school.
+
+-   But does this effect exists on individual level, group level or both?
+
+    -   Do low income students benefit from going to high SES schools?
+
+{{< newline >}}
+
+-   Mixed models allow for estimation of [both effects at once]{.highlight}!
+
+## Individual vs Group Effects
+
+![Jakub Lisek 2023](images/lysek-pisa.png){fig-align="center"}
+
+## Individual vs Group Effects
+
+-   Sometimes called [Mundlak]{.highlight} approach.
+
+-   Pretty easy, just [add cluster means and de-meaned individual values as predictors]{.highlight}.
+
+-   You can even add random slopes to account for each cluster (school) having different relationship between SES and test scores.
+
+-   Works the same with categorical predictors.
+
+# Questions?
+
+# InteRmezzo!
+
+# Technical stuff
+
+## Convergence problems
+
+-   Multilevel problems often have computational problems because of:
+
+    -   Low sample size
+
+    -   Small number of clusters
+
+    -   Large number of parameters
+
+    -   Parameter estimates to close to bounds
+
+{{< newline >}}
+
+-   It matters, how you compute them!
+
+## Convergence problems
+
+-   Often, trying different optimizers works
+
+-   `lme4` offers several options:
+
+    -   `"nloptwrap"` - fast, but unstable
+
+    -   `"bobyqa"` - slower, but more reliable
+
+-   You can set optimizer like this:
+
+```{r}
+#| echo: true
+#| eval: false
+
+glmer(achievement ~ ses + ses_school + (1|primary_school_id),
+      control = glmerControl(optimizer = "bobyqua"))
+
+```
+
+## Convergence problems
+
+-   If choosing different optimizer and respecifing model fail, there is the nuclear option.
+
+-   Simulation based estimation.
+
+    -   Advantage - almost guaranteed to work
+
+    -   Disadvantage - much slower to compute
+
+-   In R, there is `brms` package, using the same syntax:
+
+```{r}
+#| echo: true
+#| eval: false
+
+brm(achievement ~ ses + ses_school + (1|primary_school_id),
+    iter = 2000,
+    cores = 4)
+```
+
+## Minimal Number of Clusters
+
+-   Many rules of thumb (15, 30, 50) - most of them are wrong.
+
+-   Read this (in order):
+
+    -   Stegmueller, D. (2013). How Many Countries for Multilevel Modeling? A Comparison of Frequentist and Bayesian Approaches. *American Journal of Political Science*, *57*(3), 748--761. <https://doi.org/10.1111/ajps.12001>
+
+    -   Elff, M., Heisig, J., Schaeffer, M., & Shikano, S. (2016). *No Need to Turn Bayesian in Multilevel Analysis with Few Clusters: How Frequentist Methods Provide Unbiased Estimates and Accurate Inference*.
+
+## Minimal Number of Clusters
+
+-   Theoretical minimum is 3 clusters
+
+    -   (lower gives th same result as normal regression).
+
+-   Practically, the minimum is 5-6
+
+    -   (lower and partial pooling offers little benefit)
+
+{{< newline >}}
+
+-   You need to be a bit careful though.
+
+## Minimal Number of Clusters
+
+-   Bayesian/simulation based models work out of the box (just shove the data into `brms`)
+
+-   Frequentist/maximum likelihood models (e.g. `lme4`) need some consideration:
+
+    -   Use Restricted maximum likelihood (REML) - `lme4` does by default
+
+    -   Assume T distribution for random effect - honestly no idea...
+
+{{< newline >}}
+
+-   You'll get good results (unbiased, proper coverage, etc.), but more data obviously better.
+
+# Question?

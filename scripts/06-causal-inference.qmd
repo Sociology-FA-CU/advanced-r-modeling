@@ -1,0 +1,437 @@
+---
+title: "Causal Inference"
+subtitle: "Introduction"
+author: "Aleš Vomáčka"
+format:
+  revealjs:
+    theme: [dark, ../custom.scss]
+editor: visual
+messages: false
+warnings: false
+embed-resources: true
+---
+
+## Two Cultures
+
+```{r setup}
+library(tidyverse)
+library(gt)
+
+eu <- read_rds("../data/buzzwords.rds")
+```
+
+-   Statistical modeling used for two things:
+
+    -   Predictive modeling
+
+    -   Explanative modeling/Causal Inferece
+
+{{< newline >}}
+
+-   Causal inference (IMHO) is much harder than prediction, because it [relies on information not included in our data]{.highlight}.
+
+{{< newline >}}
+
+-   No sure way to do it, causal inference is an unsolved problem.
+
+-   Doing causal inference can be uncomfortable, but the benefits are great.
+
+## Goal of Causal Inference
+
+-   We are interested in what happens with variable $Y$ if variable $X$ changes.
+
+-   In a way, we are [predicting an alternative reality]{.highlight}, where everything is the same, except for the value of $X$.
+
+{{< newline >}}
+
+-   *How would math skill change if we started using project based learning?*
+
+-   *How likely would be people be to purchase a product, if they were offered a sale?*
+
+-   *What would the GDP of Czechia be, if we never entered the European Union?*
+
+## Gender & Wages
+
+-   We are interested in the effect of gender on wages.
+
+```{r}
+tribble(~name, ~gender, ~wages_man, ~wages_women,
+        "Scott",  "Man",   "32 000 CZK", "-",
+        "Ramona", "Woman", "-",           "31 000 CZK",
+        "Wallace","Man",   "36 000 CZK", "-",
+        "Kim",    "Woman", "-",           "35 000 CZK",
+        "Niel",   "Man",   "34 000 CZK", "-",
+        "Knives", "Woman", "-",           "33 000 CZK") |> 
+  gt() |> 
+  cols_label("name" = md("**Name**"),
+             "gender" = md("**Gender**"),
+             "wages_man" = md("**Wages as man**"),
+             "wages_women" = md("**Wages as woman**")) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1",
+              table.font.size = "25px") |> 
+  opt_row_striping(row_striping = TRUE) |> 
+  opt_vertical_padding(scale = 2)
+```
+
+-   What's the problem?
+
+# It is [impossible to observe both the presence and the absence of treatment]{.highlight} on individual level at the same time.
+
+## The Fundamental Problem of Causal Inference
+
+-   We can never know what the effect of some event is on individual level.
+-   But there are ways to [estimate causal effects on group level]{.highlight}!
+-   All strategies for causal inference are trying to solve/circumvent the [fundamental problem of causal inference]{.highlight}.
+
+## Estimand, Estimator, Estimate
+
+::: columns
+::: {.column width="50%"}
+[Estimand]{.highlight} - theoretical quantity of interest.
+
+{{< newline >}}
+
+[Estimator]{.highlight} - the way we estimate the estimand
+
+{{< newline >}}
+
+[Estimate]{.highlight} - the outcome of our analysis.
+:::
+
+::: {.column width="50%"}
+![Source: Richard McElreath \<3](images/estimand-estimator-estimate.png){fig-align="right" width="60%"}
+:::
+:::
+
+## Estimand
+
+-   Theoretical quantity of interest
+
+-   The number we want to get an unbiased estimate of of.
+
+{{< newline >}}
+
+{{< newline >}}
+
+-   Lundberg, I., Johnson, R., & Stewart, B. M. (2021). [What Is Your Estimand? Defining the Target Quantity Connects Statistical Evidence to Theory]{.highlight}. *American Sociological Review*, *86*(3), 532--565. <https://doi.org/10.1177/00031224211004187>
+
+## The life cycle of estimands
+
+![Lundberg et al., 2021](images/estimands-lifecycle.jpeg){fig-align="center"}
+
+## Theory or general goal
+
+-   Source of the research question.
+
+{{< newline >}}
+
+{{< newline >}}
+
+-   *Is attending pre-election debates worth it to politicians?*
+
+-   *Is the police unfair towards minorities?*
+
+-   *Is having children economically beneficial?*
+
+-   *Would we make more money by selling our products at lower price?*
+
+-   *Is being a woman disadvantageous in academia?*
+
+## Theoretical estimand
+
+-   Two parts:
+
+    -   Unit specific quantity
+
+    -   Target population of interest
+
+-   [Unit specific quantity]{.highlight}
+
+    -   The number that will represent the effect of interest.
+
+    -   Should be clear, if we are after causal effects or correlations.
+
+-   [Target population of interest]{.highlight}
+
+    -   What population are we generalizing to.
+
+## Theoretical estimands: Example
+
+-   Research question: *Is attending pre-election debates worth it to politicians?*
+
+-   Important and interesting question, but very vague.
+
+-   More focused one: What's the effect of watching a pre-election debate on the perspective voters?
+
+{{< newline >}}
+
+-   We need two things: a) Unit specific quantity & b) Target population of interest
+
+## Unit specific quantity
+
+```{r}
+tribble(~estimand, ~advantage, ~disadvantage,
+        "Difference in probability of voting for a candidate, if voter saw vs didn't see the pre-election debate", "Super relavent to both base and applied research.", "We can't directly observe voting patterns for individuals",
+        "Difference in probability of reported vote for a candidate, if voter saw vs didn't see the pre-election debate", "Reported votes can be easily observed", "Reported and actual votes are not the same",
+        "Difference in logits of reported vote for a candidate, if voter saw t vs didn't see he pre-election debate", "lol", "Getting unbiased estimates for logits is super hard",
+        "Difference in reported preferences on 5-point likert scale for a candidate, if voter saw vs didn't see the pre-election debate", "More granular measurment", "Likert scales less intuitive") |> 
+  gt() |> 
+  cols_label("estimand" = md("**Estimand**"),
+             "advantage" = md("**Advantage**"),
+             "disadvantage" = md("**Disadvantage**")) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1",
+              table.font.size = "25px") |> 
+  opt_row_striping(row_striping = TRUE) |> 
+  opt_vertical_padding(scale = 2)
+```
+
+## Target population of interest
+
+-   Multiple options:
+
+{{< newline >}}
+
+-   Population of TV viewers.
+
+-   Population of likely voters in Czechia.
+
+-   Population of voters in Czechia.
+
+-   Population of voters.
+
+## Theoretical Estimands: Other Examples
+
+```{r}
+tribble(~question, ~estimand, ~population,
+        "Is being a felon worse for blacks than for whites?", "Difference in whether application would be called back if it signaled
+White with a felony vs. Black without", "Applications to jobs in Milwaukee", 
+"Is police more likely to target minorities?", "Difference in whether person i would be stopped if perceived as Black vs. White", "Those stopped by police", 
+"Does having rich parents increases income in adulthood?", "Adult income that person i would be realized if childhood income took a particular value", "U.S. population") |> 
+  gt() |> 
+  cols_label("question" = md("**Reseach question**"),
+             "estimand" = md("**Unit specific quantity**"),
+             "population" = md("**Target population of interest**")) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1",
+              table.font.size = "25px") |> 
+  opt_row_striping(row_striping = TRUE) |> 
+  opt_vertical_padding(scale = 2)
+```
+
+## Empirical Estimand
+
+{{< newline >}}
+
+-   The [difference in expected probability of voting]{.highlight} for candidate for voters who saw vs didn't see the debate.
+
+-   $P(vote = x|debate= 1) - P(vote = x|debate= 0)$
+
+{{< newline >}}
+
+-   The [difference in means on 5-point likert scale]{.highlight} for voters who saw vs didn't see the debate
+
+-   $E(Y|debate = 1) - E(Y|debate = 0)$
+
+{{< newline >}}
+
+-   The [difference in means on 5-point likert scale]{.highlight} for voters who saw vs didn't see the debate, [conditional on variables $X$]{.highlight}.
+
+-   $E(Y|debate = 1, X) - E(Y|debate = 0, X)$
+
+## Estimation strategy
+
+-   The stuff we are going to talk about for the rest of the semester.
+
+{{< newline >}}
+
+-   Linear regression
+
+-   Propensity score matching
+
+-   Difference-in-differences
+
+-   Fixed effects
+
+## Estimands, Estimators, Estimates
+
+::: columns
+::: {.column width="50%"}
+-   At the beginning, you need to define two things:
+
+    -   What you are estimating (unit specific quantity)
+
+    -   For which population (target population of interest)
+
+-   Then you define how to represent it mathematically (Empirical Estimand)
+
+-   Then you define a strategy to get the estimate.
+:::
+
+::: {.column width="50%"}
+![Source: Richard McElreath \<3](images/estimand-estimator-estimate.png){fig-align="right" width="60%"}
+:::
+:::
+
+# Questions?
+
+# Rubin's Potential Outcomes Framework
+
+# Potential Outcomes
+
+::: columns
+::: {.column width="50%"}
+-   Developed by Donald Rubin & bros.
+
+-   The OG framework for causal inference.
+
+-   Most of [natural/technical sciences are based on it]{.highlight}.
+
+-   Basis for experimental design
+:::
+
+::: {.column width="50%"}
+![The man, the myth, the legend](images/rubin.jpg){fig-align="right"}
+:::
+:::
+
+## Potential Outcomes
+
+-   Potential outcome - [outcome given a value of treatment]{.highlight}.
+
+    -   Income if male vs Income if female
+    
+-   [Treatment]{.highlight} - the focal independent variable
+
+{{< newline >}}
+
+-   We cannot observe individual effects.
+
+-   But (under certain conditions), we can observe the [average treatment effect]{.highlight}!
+
+
+## PO Framework's Assumptions
+
+-   Two primary assumptions:
+
+    -   Ignorability
+
+    -   SUTVA
+    
+    
+{{< newline >}}
+
+- If both are true, the estimated value represents unbiased estimate of the average treatment effect.
+
+## Ignorability
+
+-   The [probability of receiving treatment has to be independent of the potential outcomes]{.highlight}.
+
+-   Simpler: The probability of being in treatment group shouldn't be dependent on outcome.
+
+    {{< newline >}}
+
+-   Broken when:
+
+    -   *Schools with high rate of bullying are more likely to receive anti-bullying training.*
+
+    -   *People more susceptible to change voting preferences are more likely to see pre-election debates.*
+
+## SUTVA
+
+-   Stable Unit Treatment Value Assumption.
+
+-   Two-parter:
+
+    -   [Everyone receives the same treatment]{.highlight}.
+
+    -   [One unit/respondent receiving treatment doesn't influence others]{.highlight}.
+
+{{< newline >}}
+
+-   Broken when:
+
+    -   *Teacher who received anti-bullying training starts teaching their colleagues.*
+
+    -   *People who saw the debate starts to talk with people who didn't.*
+
+## Potential Outcomes - Example
+
+-   Nonprofit supporting the European Union.
+
+-   Communication experts think framing messages as "European" is more effective than framing as "EU".
+
+-   We want to test this empirically.
+
+{{< newline >}}
+
+-   How to do it?
+
+## EU Communication - Estimand
+
+-   Survey experiment
+
+-   Formulate a set of statements
+
+<!-- -->
+
+-   Unit specific quantity:
+    -   The probability of agreeing with statement, given that "Europe" is used instead of "EU".
+-   Target population of interest
+    -   Adult population of Czechia.
+
+## EU Communication - Statements
+
+```{r}
+tribble(~item, ~label,
+        "1", "Spolupráce v [Evroské unii/Evropě] je výhodná pro českou ekonomiku.",
+        "2", "ČR je světovou velmocí díky [Evropské unii/Evropě]",
+        "3", "Díky společnému postupu v [Evropské unii/Evropě] jsme silnějš",
+        "4", "V rámci [Evropské unie/Evropě] potřebujeme posilovat odolnost",
+        "5", "Když je bezpečnostně silná [Evropská unie/Evropa], tak je silné i Česko",
+        "6", "Spolupráce v rámci [Evropské unie/Evropy] pomůže udržet ceny energií pod kontrolou",
+        "7", "[Evropská unie/Evropa] by měla usilovat o to stát se světovým lídrem v zelených technologiích",
+        "8", "[Evropská unie/Evropa] by se měla vzdát části svého blahobytu ve prospěch důslednější ochrany životního prostředí") |> 
+  gt() |> 
+  cols_label("item" = md("**ID**"),
+             "label" = md("**Statement**")) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1",
+              table.font.size = "25px") |> 
+  opt_row_striping(row_striping = TRUE) |> 
+  opt_vertical_padding(scale = 2)
+```
+
+## EU Communication - Assumptions
+
+-   Ignorability:
+
+    -   Statement version is assigned at random -\> We can be sure it doesn't depend on the outcome
+
+{{< newline >}}
+
+-   SUTVA:
+
+    -   Respondents don't know each other -\> No influence
+
+    -   Statements are the same for everyone -\> One version of treatment
+
+# Questions?
+
+# InteRmezzo!
+
+## Experimental design - concluding remarks
+
+- Randomization by far the easiest way satisfy ignorability and SUTVA
+- Sometimes it's better to randomize at the group level (e.g. schools)
+
+{{< newline >}}
+
+- Randomization doesn't guarantee that single estimate is accurate!
+- It guarantees that the average of many estimates is accurate.
+
+{{< newline >}}
+
+- Precision can be improved by adding more predictors of the outcome (that are not related to the treatment)
+- By far the best predictor is pre-treatment value of the outcome.

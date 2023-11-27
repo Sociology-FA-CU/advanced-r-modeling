@@ -1,0 +1,26 @@
+"Název kraje 
+ (kraj)","Zkratka 
+ ČSÚ","Zkratka 
+ na RZ",Krajské město,"Počet obyvatel 
+ (2021)","Rozloha 
+ (km²)","Hustota 
+ zalidnění 
+ (/km²; 2021)","HDP 
+ (mld. Kč, 
+ 2021)","HDP na obyv. 
+ (2021)"
+Hlavní město Praha,PHA,A,Praha,1 335 084,"496,21",2 691,"1 677,2","1 264,456"
+Středočeský kraj,STČ,S,Praha,1 397 997,"10 928,50",128,"688,8","494,720"
+Jihočeský kraj,JHČ,C,České Budějovice,643 551,"10 058,00",64,"291,7","453,208"
+Plzeňský kraj,PLK,P,Plzeň,591 041,"7 648,91",77,"297,9","504,354"
+Karlovarský kraj,KVK,K,Karlovy Vary,293 311,"3 310,34",92,"99,9","339,491"
+Ústecký kraj,ULK,U,Ústí nad Labem,817 004,"5 338,66",153,324,"395,524"
+Liberecký kraj,LBK,L,Liberec,442 476,"3 163,41",140,"186,9","421,913"
+Královéhradecký kraj,HKK,H,Hradec Králové,550 803,"4 759,09",116,288,"522,295"
+Pardubický kraj,PAK,E,Pardubice,522 856,"4 519,22",116,"237,1","453,219"
+Kraj Vysočina,VYS,J,Jihlava,508 852,"6 795,73",75,"234,7","460,423"
+Jihomoravský kraj,JHM,B,Brno,1 195 327,"7 187,83",166,"671,3","562,278"
+Olomoucký kraj,OLK,M,Olomouc,630 522,"5 271,54",120,"286,4","453,360"
+Moravskoslezský kraj,MSK,T,Ostrava,1 192 834,"5 426,83",220,"543,2","453,836"
+Zlínský kraj,ZLK,Z,Zlín,580 119,"3 963,04",146,"281,7","484,632"
+,,CZ,,10 701 777,"78 871,01",136,"4 733,4","571,051"

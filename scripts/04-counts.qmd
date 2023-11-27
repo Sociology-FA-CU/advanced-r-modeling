@@ -1,0 +1,376 @@
+---
+title: "Modeling counts 1"
+subtitle: "Poisson and Negative Binomial"
+author: "Aleš Vomáčka"
+format:
+  revealjs:
+    theme: [dark, ../custom.scss]
+editor: visual
+messages: false
+warnings: false
+embed-resources: true
+---
+
+## Counts are Pretty Common
+
+```{r setup}
+#| echo: false
+library(MASS)
+library(tidyverse)
+library(avom)
+library(ggtext)
+library(marginaleffects)
+library(modelsummary)
+library(gt)
+
+
+absences <- read_rds("../data/absences.rds")
+ess <- read_rds("../data/ess.rds")
+
+# Plot setup --------------------------------------------------------------
+theme_set(theme_avom() +
+            theme(text = element_text(size = 30),
+                  plot.title = element_textbox_simple(),
+                  plot.subtitle = element_textbox_simple(),
+                  panel.grid.minor = element_blank(),
+                  panel.grid.major = element_blank(),
+                  panel.background = element_rect(fill = "#FFF0C1"),
+                  plot.background = element_rect(fill = "#FFF0C1"),
+                  axis.ticks = element_blank()))
+
+update_geom_defaults("col", list(fill = "#83a598"))
+update_geom_defaults("area", list(fill = "#83a598"))
+```
+
+::: columns
+::: {.column width="40%"}
+-   Number of absences in school per year
+
+-   Number of minutes on the internet per day
+
+-   Number of purchases per year
+
+-   Number of days since last job
+:::
+
+::: {.column width="60%"}
+```{r counts-example}
+#| fig-asp: 1
+#| fig-align: right
+
+absences |> 
+  ggplot(aes(x = daysabs)) +
+  geom_histogram(fill = "#83a598", color = "white") +
+  labs(x = "Days absent in a school year",
+       y = "Count")
+```
+:::
+:::
+
+## Poisson Distribution
+
+::: columns
+::: {.column width="50%"}
+-   Several options for modeling counts. The old school choice is [Poisson distribution]{.highlight}.
+
+-   Assumes that events happen at constant rate over a fixed amount of time.
+
+-   Important implication is that poisson distribution assumes [the mean and the variance is the same]{.highlight} (often problematic in practice).
+:::
+
+::: {.column width="50%"}
+```{r poisson-example}
+#| fig-asp: 1
+#| fig-align: right
+
+tibble(x = 0:30,
+       rate1 = dpois(x, lambda = 1),
+       rate10 = dpois(x, lambda = 10),
+       rate20 = dpois(x, lambda = 20)) |>
+  pivot_longer(cols = -x) |> 
+  mutate(name = case_when(name == "rate1" ~ "Rate = 1",
+                          name == "rate10" ~ "Rate = 10",
+                          name == "rate20" ~ "Rate = 20")) |> 
+  ggplot(aes(x = x,
+             y = value,
+             fill = name)) +
+  geom_col(position = position_identity(), alpha = 0.5, show.legend = FALSE) +
+  scale_fill_avom() +
+  labs(x = "Counts",
+       y = "P(x)",
+       y = element_blank(),
+       title = "Poisson distribution examples",
+       subtitle = "<span style = 'color:#fb4934;'>a) rate = 1</span> <span style = 'color:#b8bb26;'>b) rate = 10</span> <span style = 'color:#83a598;'>c) rate = 20</span>")
+```
+:::
+:::
+
+## Poisson Regression
+
+$$
+log(Y) \sim Poisson(\beta \cdot X)
+$$
+
+::: incremental
+-   We are using a log link. Why?
+
+-   Counts have bottom bound at zero, but no upper one.
+
+-   E.g. predicting school absences with math scores and training program type
+
+-   $$
+    log(absences) \sim Poisson(\beta_0 + \beta_1 \cdot math + \beta_2 \cdot program)
+    $$
+:::
+
+## Interpreting Poisson models
+
+-   Coefficients are in logs. Example:
+
+    -   1 unit increase in math score is associated with -0.1 log days of absence.
+
+    -   Students in the vocational program have on average -1.28 log days of absence compared to the ones in the general program.
+
+```{r}
+m_absences_pois <- glm(daysabs ~ prog + math,
+                       family = poisson(),
+                       data = absences)
+
+prog_dummy <- tibble(term = "Program: General", m = "-")
+attr(prog_dummy, "position") <- 2
+
+modelsummary(m_absences_pois, output = "gt",
+             fmt = 2,
+             estimate = "{estimate}",
+             statistic = NULL,
+             gof_omit = 'DF|Deviance|R2|AIC|BIC|Obs|Log|RMSE|F',
+             coef_rename = c("math" = "Math score",
+                             "progAcademic" = "Program: Academic",
+                             "progVocational" = "Program: Vocational"),
+             add_rows = prog_dummy) |> 
+  cols_label("(1)" = md("**Coefficient**")) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+```
+
+## Interpreting Poisson models - The Better Way
+
+-   We can exponentiate the coefficients to get (approximate) [additive increases]{.highlight} in natural units.
+
+    -   1 unit increase in math score is associated with 1% decrease in the days of absence.
+
+-   This approximation only works for small changes, i.e. when the [exponentiated coefficients are close 1]{.highlight} (e.g. between 0.9-1.1)
+
+```{r}
+        modelsummary(m_absences_pois, output = "gt",
+                     fmt = 2,
+                     estimate = "{estimate}",
+                     statistic = NULL,
+                     gof_omit = 'DF|Deviance|R2|AIC|BIC|Obs|Log|RMSE|F',
+                     coef_rename = c("math" = "Math score",
+                                     "progAcademic" = "Program: Academic",
+                                     "progVocational" = "Program: Vocational"),
+                     add_rows = prog_dummy,
+                     exponentiate = TRUE) |> 
+          cols_label("(1)" = md("**Exp(Coefficient)**")) |> 
+          tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+```
+
+## Interpreting Poisson models - The Best(?) Way
+
+-   You can also use (average) marginal effects the way you are used to.
+
+    -   On average, students in vocational program have 7.5 less days of absence than those in the general program.
+
+    -   On average, one point increase in the math test is associated with 0.04 less days of absence.
+
+```{r}
+avg_slopes(m_absences_pois) |> 
+  modelsummary(output = "gt",
+                     fmt = 2,
+                     estimate = "{estimate}",
+                     statistic = NULL,
+                     gof_omit = 'DF|Deviance|R2|AIC|BIC|Obs|Log|RMSE|F',
+                     coef_rename = c("math" = "Math score",
+                                     "prog Academic - General" = "General - Academic",
+                                     "prog Vocational - General" = "General - Vocational",
+                                     "math dY/dX" = "Math score"),
+               shape = term : contrast ~ model) |> 
+          cols_label("(1)" = md("**Average Marginal Effect**")) |> 
+          tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+```
+
+## Poisson model visually
+
+```{r}
+#| layout-ncol: 2
+#| fig-asp: 1
+#| fig-align: center
+
+plot_predictions(m_absences_pois, condition = "math") +
+  labs(x = "Math Score", y = "Days of absence")
+plot_predictions(m_absences_pois, condition = "prog") +
+  labs(x = "Math Score", y = "Days of absence")
+```
+
+# Questions?
+
+## Over- and Under-dispersion
+
+-   Poisson regression assumes the mean and variance is the same.
+
+-   If not, the estimates are biased - both the point estimates and standard errors!
+
+-   In practice, variance is usually higher than the mean (overdispersion). Rarely, it's lower (underdispersion).
+
+-   (An) Solution - Use Negative binomial distribution instead.
+
+## Negative Binomial distribution
+
+-   Similar to Poisson, but mean and variance are decoupled - Over/Under-dispersion is estimated from the data
+
+-   If the mean and variance are actually the same, both models give the same results.
+
+```{r}
+m_absences_negbin <- glm.nb(daysabs ~ prog + math, data = absences)
+model_list <- list(Poisson = m_absences_pois,
+                   `Negative Binomial` = m_absences_negbin)
+
+prog_dummy <- tibble(term = "Program: General", Poisson = "-", `Negative Binomial` = "-")
+attr(prog_dummy, "position") <- 2
+
+modelsummary(model_list, output = "gt",
+             fmt = 2,
+             estimate = "{estimate}",
+             statistic = NULL,
+             gof_omit = 'DF|Deviance|R2|AIC|BIC|Obs|Log|RMSE|F',
+             coef_rename = c("math" = "Math score",
+                             "progAcademic" = "Program: Academic",
+                             "progVocational" = "Program: Vocational"),
+             add_rows = prog_dummy) |> 
+  tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+```
+
+## Poisson vs Negative Binomial
+
+-   Which one to use? Just use Negative binomial.
+
+-   The results will be the same or better.
+
+. . .
+
+</b>
+
+</b>
+
+</b>
+
+-   So why learn about Poisson distribution?
+
+## It Was Poisson All Along
+
+-   You have a contingency table, how do you test for a relationship between the two variables?
+
+```{r}
+table(ess$gender, ess$education) |> 
+  as.data.frame() |> 
+  pivot_wider(names_from = Var2, values_from = Freq) |> 
+  gt() |> 
+  cols_label("Var1" = "") |> 
+          tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+```
+
+. . .
+
+-   That's right a Chi squared test.
+
+-   Results: $\chi^2$ p value = 3.23e-06
+
+## It Was Poisson All Along
+
+-   Now imagine we transformed our data into long format:
+
+```{r}
+table(ess$gender, ess$education) |> 
+  as.data.frame() |> 
+  gt() |> 
+  cols_label("Var1" = "Gender",
+             "Var2" = "Education") |> 
+          tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+```
+
+. . .
+
+And fitted poisson model with an interaction:
+
+$$
+log(Freq) \sim Poisson(Gender + Education + Gender \cdot Education)
+$$
+
+## It Was Poisson All Along
+
+-   We can then test whether adding the interaction led to statistically significant improvement in model fit.
+
+```{r}
+table(ess$gender, ess$education) |> 
+  as.data.frame() |> 
+  rename(Gender = Var1, Education = Var2) |> 
+  glm(Freq ~ Education*Gender, data = _, family = poisson()) |> 
+  anova(test = "Chisq") |> 
+  as.data.frame() |> 
+  rownames_to_column(var = "Term") |> 
+  gt() |> 
+  fmt_scientific(columns = "Pr(>Chi)",
+            decimals = 2,
+            exp_style = "e") |> 
+  fmt_number(columns = c("Deviance", "Resid. Dev"),
+             decimals = 3) |> 
+   tab_options(table.width = pct(100),
+              table.background.color = "#FFF0C1")
+
+```
+
+-   The p value from poisson model is 3.24e-06, the $\chi^2$ one was 3.23e-06. They are (practically) the same!
+
+-   Why?
+
+## It Was Poisson All Along
+
+-   $\chi^2$ test is an approximate way to compute poisson regression (before it even existed)!
+
+-   Useful to know for two reason:
+
+    -   It's cool.
+
+    -   A good way to model categorical data.
+
+<br>
+
+-   Unlike $\chi^2$ test, poisson regression:
+
+    -   Can control for numerical variables
+
+    -   Can include more than 2 categorical variables
+
+    -   A good way to model categorical data in general
+
+# Questions?
+
+## Assumptions for Poisson/Negative Binomial
+
+-   The same old story.
+
+-   Linearity between log counts and predictors.
+
+-   Conditional distribution follow Poisson/Negative Binomial distribution.
+
+    -   For Poisson, this means no over/underdispersion.
+
+# Questions?
+
+# InteRmezzo!
